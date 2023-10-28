@@ -14,7 +14,7 @@
     "pdf-parse": "^1.1.1",
     "rake-modified": "^1.0.8",
     "replicate": "^0.18.1",
-    "tiktoken": "^1.0.10",
+    "js-tiktoken": "^1.0.7",
     "uuid": "^9.0.1",
     "wink-nlp": "^1.14.3"
   },
@@ -31,10 +31,10 @@
     "node": ">=18.0.0"
   },
   "types": "./dist/index.d.ts",
-  "main": "./dist/index.js",
+  "main": "./dist/index.mjs",
   "scripts": {
     "lint": "eslint .",
     "test": "jest",
-    "build": "tsup src/index.ts --format esm,cjs --dts"
+    "build": "tsup src/index.ts --format esm --dts"
   }
 }
