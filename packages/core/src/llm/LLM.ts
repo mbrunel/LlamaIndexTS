@@ -23,6 +23,7 @@ import {
 import { getOpenAISession, OpenAISession } from "./openai";
 import { ReplicateSession } from "./replicate";
 import { pipeline } from "@xenova/transformers";
+import { unixLineSeparator } from "../TextSplitter";
 
 export type MessageType =
   | "user"
@@ -613,4 +614,108 @@ export class LocalLLM implements LLM {
     return this.chat([{ content: prompt, role: "user" }], parentEvent);
   }
 
+}
+
+async function* streamToAsyncIterable(
+	stream: ReadableStream<Uint8Array>
+): AsyncIterableIterator<Uint8Array> {
+	const reader = stream.getReader();
+	try {
+		while (true) {
+			const { done, value } = await reader.read();
+			if (done) return;
+			yield value;
+		}
+	} finally {
+		reader.releaseLock();
+	}
+}
+
+export class BlindLlama implements LLM {
+  jwt: string;
+  url: string;
+  max_new_tokens: number;
+  temperature: number;
+  truncate: number;
+  return_full_text: boolean;
+
+  constructor(jwt: string, init?: Partial<BlindLlama>) {
+    this.jwt = jwt;
+    this.url = init?.url ?? "https://api.chat.mithrilsecurity.io/generate_stream";
+    this.max_new_tokens = init?.max_new_tokens ?? 256;
+    this.temperature = init?.temperature ?? 0.7;
+    this.truncate = init?.truncate ?? 2048;
+    this.return_full_text = init?.return_full_text ?? false;
+  }
+
+  async chat(messages: ChatMessage[], parentEvent?: Event): Promise<ChatResponse> {
+    let inputs = `[INST]<<SYS>>
+    You are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe. Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. Please ensure that your responses are socially unbiased and positive in nature.
+    
+    If a question does not make any sense, or is not factually coherent, explain why instead of answering something not correct. If you don't know the answer to a question, please don't share false information.<</SYS>>
+    
+    [/INST][INST]`;
+    inputs += messages[0].content;
+    inputs += '[/INST]';
+    console.log("prompt: ", inputs);
+    let body = JSON.stringify({
+			inputs: inputs,
+			parameters: {
+        max_new_tokens: this.max_new_tokens,
+        temperature: this.temperature,
+        truncate: this.truncate,
+        return_full_text: this.return_full_text,
+      },
+		});
+    let resp = await fetch(this.url, {
+      headers: {
+        "Content-Type": "application/json",
+        accesstoken: this.jwt,
+      },
+      method: "POST",
+      body: body,
+    });
+    let output = "";
+    if (resp.ok && resp.body) {
+      for await (const input of streamToAsyncIterable(resp.body)) {
+        const lines = new TextDecoder()
+          .decode(input)
+          .split("\n")
+          .filter((line) => line.startsWith("data:"));
+          
+					for (const message of lines) {
+						let lastIndex = message.lastIndexOf("\ndata:");
+						if (lastIndex === -1) {
+							lastIndex = message.indexOf("data");
+						}
+
+						if (lastIndex === -1) {
+							console.error("Could not parse last message", message);
+						}
+
+						let lastMessage = message.slice(lastIndex).trim().slice("data:".length);
+						if (lastMessage.includes("\n")) {
+							lastMessage = lastMessage.slice(0, lastMessage.indexOf("\n"));
+						}
+
+						try {
+              const lastMessageJSON = JSON.parse(lastMessage);
+							if (!lastMessageJSON.generated_text) {
+								output +=lastMessageJSON.token.text;
+              }
+            } catch (e) {
+              console.log(lastMessage);
+              console.log(e);
+          }
+        }
+      }
+    }
+    return {
+      message: { content: output, role: "assistant"}
+    };
+  }
+
+  complete(prompt: string, parentEvent?: Event): Promise<CompletionResponse> {
+    return this.chat([{ content: prompt, role: "user" }], parentEvent);
+  }
 }
