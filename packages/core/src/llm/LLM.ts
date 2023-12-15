@@ -641,7 +641,7 @@ export class BlindLlama implements LLM {
 
   constructor(jwt: string, init?: Partial<BlindLlama>) {
     this.jwt = jwt;
-    this.url = init?.url ?? "https://api.chat.mithrilsecurity.io/generate_stream";
+    this.url = init?.url ?? "https://api-inference.huggingface.co/models/meta-llama/Llama-2-70b-chat-hf";
     this.max_new_tokens = init?.max_new_tokens ?? 256;
     this.temperature = init?.temperature ?? 0.7;
     this.truncate = init?.truncate ?? 2048;
@@ -670,45 +670,15 @@ export class BlindLlama implements LLM {
     let resp = await fetch(this.url, {
       headers: {
         "Content-Type": "application/json",
-        accesstoken: this.jwt,
+        'Authorization': `Bearer ${this.jwt}`,
       },
       method: "POST",
       body: body,
     });
     let output = "";
     if (resp.ok && resp.body) {
-      for await (const input of streamToAsyncIterable(resp.body)) {
-        const lines = new TextDecoder()
-          .decode(input)
-          .split("\n")
-          .filter((line) => line.startsWith("data:"));
-          
-					for (const message of lines) {
-						let lastIndex = message.lastIndexOf("\ndata:");
-						if (lastIndex === -1) {
-							lastIndex = message.indexOf("data");
-						}
-
-						if (lastIndex === -1) {
-							console.error("Could not parse last message", message);
-						}
-
-						let lastMessage = message.slice(lastIndex).trim().slice("data:".length);
-						if (lastMessage.includes("\n")) {
-							lastMessage = lastMessage.slice(0, lastMessage.indexOf("\n"));
-						}
-
-						try {
-              const lastMessageJSON = JSON.parse(lastMessage);
-							if (!lastMessageJSON.generated_text) {
-								output +=lastMessageJSON.token.text;
-              }
-            } catch (e) {
-              console.log(lastMessage);
-              console.log(e);
-          }
-        }
-      }
+      let json = await resp.json();
+      output = json[0]["generated_text"];
     }
     return {
       message: { content: output, role: "assistant"}

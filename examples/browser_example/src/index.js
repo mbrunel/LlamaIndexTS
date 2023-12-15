@@ -1,11 +1,11 @@
 const llama = require("llamaindex");
 
 async function ask() {
-  const jwt = "<blindchat_jwt_placeholder>";
+  const HUGGINGFACE_API_TOKEN = "<HUGGINGFACE_TOKEN>";
   const text = document.getElementById("text-file").content;
   const doc = new llama.Document({text: text});
   const serviceContext = llama.serviceContextFromDefaults({
-    llm: new llama.BlindLlama(jwt),
+    llm: new llama.BlindLlama(HUGGINGFACE_API_TOKEN),
     embedModel: new llama.LocalEmbedding(),
   });
   const index = await llama.VectorStoreIndex.fromDocuments([doc], { serviceContext: serviceContext });
